@@ -99,12 +99,17 @@ function request<T = any>(options: RequestOptions): Promise<T> {
 
 /**
  * 微信登录: code → JWT token (由 auth.ts 的 ensureLogin 调用)
+ *
+ * _isRetry: true —— 登录接口自身绝不能进 401 重登重试分支:
+ * 真实微信模式下 code 无效时后端返回 401, 若触发重试会 await ensureLogin(),
+ * 而它正是当前挂起的登录 Promise 本身 → 自己等自己, 永久死锁。
  */
 export function login(code: string): Promise<LoginResponse> {
   return request<LoginResponse>({
     url: '/api/auth/login',
     method: 'POST',
     data: { code },
+    _isRetry: true,
   })
 }
 
