@@ -5,8 +5,10 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # 1. 先复制依赖清单并安装 (利用 Docker 分层缓存: 依赖变更频率远低于代码)
+# PIP_INDEX_URL 可在构建时覆盖: 国内服务器传阿里云镜像加速, 默认官方源
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+ARG PIP_INDEX_URL=https://pypi.org/simple
+RUN pip install --no-cache-dir -i ${PIP_INDEX_URL} -r requirements.txt
 
 # 2. 复制应用代码
 COPY app ./app
