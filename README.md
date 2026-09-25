@@ -81,7 +81,7 @@ travel-agent-miniapp/
 │   │   ├── models/schemas.py   # Pydantic 模型
 │   │   └── core/               # 日志/异常处理
 │   ├── data/knowledge/         # RAG 知识库文档 (4 城市)
-│   ├── tests/                  # pytest (23 个测试, 隔离真实网络)
+│   ├── tests/                  # pytest (29 个测试, 隔离真实网络)
 │   ├── Dockerfile / docker-compose.yml
 │   └── requirements.txt
 └── frontend/                   # uniapp 小程序前端 (Vue3 + TS + Vite)
@@ -132,6 +132,7 @@ npm run dev:mp-weixin     # 产物在 dist/dev/mp-weixin, 用微信开发者工�
 - ✅ **规划进度页**：每 2 秒轮询异步任务，真实进度条 + 阶段清单（搜景点→查天气→搜酒店→搜美食→AI生成），5 分钟超时兜底
 - ✅ **行程结果页**：原生 `<map>` 组件全览打点（景点+酒店 callout）、每日卡片（景点图/来源三色标签/门票/餐饮/酒店）、预算明细、天气预报表、降级警告横幅
 - ✅ **历史行程页**：分页加载 + 触底加载更多 + 下拉刷新 + 城市筛选 + 删除二次确认
+- ✅ **微信静默登录**：`wx.login` → 后端 code2session → JWT，历史记录按用户隔离
 
 ## 🗺️ 后续规划（待开发）
 
