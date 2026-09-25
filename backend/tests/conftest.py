@@ -7,6 +7,7 @@
 
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 # 确保 backend 目录在 sys.path, 允许 import app 包
@@ -17,6 +18,9 @@ os.environ["AMAP_API_KEY"] = "test_amap_key"
 os.environ["LLM_API_KEY"] = "test_llm_key"
 os.environ["LLM_BASE_URL"] = "http://localhost:9999/v1"  # 无效端点, 防止误发请求
 os.environ["LLM_MODEL_ID"] = "test-model"
+# 独立临时数据库: 不读写开发库 data/trip_planner.db, 避免残留数据影响断言
+# (如 is_new_user 判定); 每次 pytest 会话都是全新库
+os.environ["TRIP_DB_PATH"] = str(Path(tempfile.mkdtemp(prefix="trip_test_db_")) / "test.db")
 
 import pytest
 from fastapi.testclient import TestClient

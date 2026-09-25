@@ -92,6 +92,17 @@ export interface TripFormData {
   free_text_input: string
 }
 
+// ============ 认证 ============
+
+export interface LoginResponse {
+  success: boolean
+  token: string
+  expires_in: number
+  user_id: number
+  is_new_user: boolean
+  mock_mode: boolean
+}
+
 // ============ 异步任务 (小程序专用) ============
 
 export interface TaskCreatedResponse {

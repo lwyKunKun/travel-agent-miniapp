@@ -14,10 +14,15 @@ logger = logging.getLogger(__name__)
 
 
 def create_trip_record(
-    db: Session, request: TripRequest, trip_plan: TripPlan
+    db: Session, request: TripRequest, trip_plan: TripPlan, user_id: Optional[int] = None
 ) -> TripRecord:
-    """保存一条旅行计划历史记录 (行程生成成功后调用)"""
+    """保存一条旅行计划历史记录 (行程生成成功后调用)
+
+    Args:
+        user_id: 归属用户 ID (小程序登录用户); None 表示匿名 (Web 端)
+    """
     record = TripRecord(
+        user_id=user_id,
         city=request.city,
         start_date=request.start_date,
         end_date=request.end_date,
@@ -40,13 +45,20 @@ def list_trip_records(
     page: int = 1,
     page_size: int = 10,
     city: Optional[str] = None,
+    user_id: Optional[int] = None,
 ):
     """分页查询历史记录 (按创建时间倒序)
+
+    Args:
+        user_id: 指定时只返回该用户的记录 (小程序端用户隔离);
+                 None 时返回全部 (兼容旧行为, 仅供内部/测试用)
 
     Returns:
         (records, total): 记录列表与总条数
     """
     query = select(TripRecord)
+    if user_id is not None:
+        query = query.where(TripRecord.user_id == user_id)
     if city:
         query = query.where(TripRecord.city.contains(city))
 
@@ -59,14 +71,27 @@ def list_trip_records(
     return list(records), total
 
 
-def get_trip_record(db: Session, record_id: int) -> Optional[TripRecord]:
-    """按 id 查询历史记录"""
-    return db.get(TripRecord, record_id)
+def get_trip_record(
+    db: Session, record_id: int, user_id: Optional[int] = None
+) -> Optional[TripRecord]:
+    """按 id 查询历史记录
 
-
-def update_trip_record(db: Session, record_id: int, trip_plan: TripPlan) -> Optional[TripRecord]:
-    """更新历史记录的行程计划 (前端编辑保存后持久化)"""
+    Args:
+        user_id: 指定时校验归属 (不是该用户的记录视为不存在, 防越权访问)
+    """
     record = db.get(TripRecord, record_id)
+    if record is None:
+        return None
+    if user_id is not None and record.user_id != user_id:
+        return None
+    return record
+
+
+def update_trip_record(
+    db: Session, record_id: int, trip_plan: TripPlan, user_id: Optional[int] = None
+) -> Optional[TripRecord]:
+    """更新历史记录的行程计划 (前端编辑保存后持久化; user_id 指定时校验归属)"""
+    record = get_trip_record(db, record_id, user_id)
     if record is None:
         return None
     record.plan_json = trip_plan.model_dump_json()
@@ -76,9 +101,9 @@ def update_trip_record(db: Session, record_id: int, trip_plan: TripPlan) -> Opti
     return record
 
 
-def delete_trip_record(db: Session, record_id: int) -> bool:
-    """删除历史记录, 返回是否删除成功"""
-    record = db.get(TripRecord, record_id)
+def delete_trip_record(db: Session, record_id: int, user_id: Optional[int] = None) -> bool:
+    """删除历史记录 (user_id 指定时校验归属), 返回是否删除成功"""
+    record = get_trip_record(db, record_id, user_id)
     if record is None:
         return False
     db.delete(record)

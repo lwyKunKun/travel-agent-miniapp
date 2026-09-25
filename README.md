@@ -43,13 +43,13 @@ GET /api/trip/tasks/{task_id}
 {
   "success": true,
   "task_id": "ff776517...",
-  "status": "running",            // pending / running / completed / failed
-  "stage": "正在搜索景点…",         // 当前阶段描述, 可直接展示给用户
-  "progress": 25,                  // 进度百分比 0~100
+  "status": "running", // pending / running / completed / failed
+  "stage": "正在搜索景点…", // 当前阶段描述, 可直接展示给用户
+  "progress": 25, // 进度百分比 0~100
   "created_at": "2026-09-25T04:30:00+00:00",
   "finished_at": null,
-  "error": null,                   // failed 时返回失败原因
-  "data": null                     // completed 时返回完整行程 (TripPlan)
+  "error": null, // failed 时返回失败原因
+  "data": null // completed 时返回完整行程 (TripPlan)
 }
 ```
 
@@ -59,12 +59,12 @@ GET /api/trip/tasks/{task_id}
 
 ### 实现说明
 
-| 文件 | 说明 |
-|---|---|
+| 文件                                   | 说明                                                       |
+| -------------------------------------- | ---------------------------------------------------------- |
 | `backend/app/services/task_service.py` | 任务管理器：内存任务表、线程池执行、阶段进度插值、TTL 清理 |
-| `backend/app/api/routes/trip.py` | 新增 `POST /tasks`、`GET /tasks/{task_id}` 两个路由 |
-| `backend/app/models/schemas.py` | 新增 `TaskCreatedResponse`、`TaskStatusResponse` 模型 |
-| `backend/tests/test_trip_tasks.py` | 异步任务全生命周期测试（mock LLM，不发真实请求） |
+| `backend/app/api/routes/trip.py`       | 新增 `POST /tasks`、`GET /tasks/{task_id}` 两个路由        |
+| `backend/app/models/schemas.py`        | 新增 `TaskCreatedResponse`、`TaskStatusResponse` 模型      |
+| `backend/tests/test_trip_tasks.py`     | 异步任务全生命周期测试（mock LLM，不发真实请求）           |
 
 > 进度按「阶段计划 + 时间插值」估算：LangGraph 节点内部无回调可挂，按各节点经验耗时推进 progress，真实完成前置 95%，完成时置 100。
 
@@ -101,7 +101,7 @@ travel-agent-miniapp/
 
 ```bash
 cd backend
-python -m venv .venv && source .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env            # 填入高德 Key / LLM Key / (可选)DashScope Key
 python run.py                   # 启动后访问 http://localhost:8000/docs

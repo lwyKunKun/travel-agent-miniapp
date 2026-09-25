@@ -1,11 +1,15 @@
 <script setup lang="ts">
 import { onLaunch, onShow } from "@dcloudio/uni-app";
+import { ensureLogin } from "@/services/auth";
 
 onLaunch(() => {
-  console.log("App Launch");
+  // 启动即静默登录 (无感): 小程序走 uni.login 拿 code, H5 走设备码。
+  // 失败不阻断 (ensureLogin 内部已降级为匿名模式), api.ts 在 401 时还会自动重登一次。
+  ensureLogin();
 });
 onShow(() => {
-  console.log("App Show");
+  // 每次回到前台补一次登录检查: token 过期时静默续期, 未过期则直接命中缓存
+  ensureLogin();
 });
 </script>
 

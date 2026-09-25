@@ -50,6 +50,8 @@ class TripTask:
 
     task_id: str
     request: TripRequest
+    # 归属用户 ID (小程序登录用户); None 表示匿名 (Web 端/未登录)
+    user_id: Optional[int] = None
     status: str = "pending"  # pending / running / completed / failed
     stage: str = ""
     progress: int = 0
@@ -71,14 +73,21 @@ class TaskManager:
 
     # ---------- 对外接口 ----------
 
-    def submit(self, request: TripRequest) -> TripTask:
-        """创建任务并投递到后台线程池, 立即返回 (不等结果)"""
-        task = TripTask(task_id=uuid.uuid4().hex, request=request)
+    def submit(self, request: TripRequest, user_id: Optional[int] = None) -> TripTask:
+        """创建任务并投递到后台线程池, 立即返回 (不等结果)
+
+        Args:
+            user_id: 归属用户 ID, 任务完成后保存历史记录时写入 (用户隔离)
+        """
+        task = TripTask(task_id=uuid.uuid4().hex, request=request, user_id=user_id)
         with self._lock:
             self._tasks[task.task_id] = task
             self._cleanup_expired_locked()
         self._executor.submit(self._run_task, task)
-        logger.info(f"📋 异步任务已创建: task_id={task.task_id}, 城市={request.city}")
+        logger.info(
+            f"📋 异步任务已创建: task_id={task.task_id}, 城市={request.city}, "
+            f"用户={user_id if user_id else '匿名'}"
+        )
         return task
 
     def get(self, task_id: str) -> Optional[TripTask]:
@@ -110,7 +119,9 @@ class TaskManager:
             # 保存历史 + RAG 入库 (与同步接口一致, 失败不影响结果返回)
             db = SessionLocal()
             try:
-                record = history_service.create_trip_record(db, task.request, trip_plan)
+                record = history_service.create_trip_record(
+                    db, task.request, trip_plan, user_id=task.user_id
+                )
                 get_rag_service().add_history_plan(record.id, task.request, trip_plan)
             except Exception as e:
                 logger.warning(f"⚠️ 异步任务历史/RAG 保存失败(不影响行程): {e}")

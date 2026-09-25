@@ -1,6 +1,7 @@
 """旅行规划API路由"""
 
 import logging
+from typing import Optional
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
@@ -14,9 +15,11 @@ from ...models.schemas import (
 from ...agents.trip_planner_agent import get_trip_planner_agent
 from ...core.exceptions import BizException
 from ...db.database import get_db
+from ...db.models import User
 from ...services import history_service
 from ...services.rag_service import get_rag_service
 from ...services.task_service import get_task_manager
+from ..deps import get_optional_user
 
 router = APIRouter(prefix="/trip", tags=["旅行规划"])
 
@@ -29,7 +32,11 @@ logger = logging.getLogger(__name__)
     summary="生成旅行计划",
     description="根据用户输入的旅行需求,生成详细的旅行计划",
 )
-def plan_trip(request: TripRequest, db: Session = Depends(get_db)):
+def plan_trip(
+    request: TripRequest,
+    db: Session = Depends(get_db),
+    user: Optional[User] = Depends(get_optional_user),
+):
     """
     生成旅行计划
 
@@ -37,20 +44,22 @@ def plan_trip(request: TripRequest, db: Session = Depends(get_db)):
     由 FastAPI 自动放到线程池执行, 避免阻塞事件循环拖慢其他接口。
 
     生成成功后自动:
-    1. 保存历史记录到 SQLite (供 /api/history 查询)
+    1. 保存历史记录到 SQLite (供 /api/history 查询; 登录用户挂到其名下)
     2. 写入 RAG 向量库 (供下次规划时检索参考)
     (以上两步失败不影响行程返回)
 
     Args:
         request: 旅行请求参数
         db: 数据库会话
+        user: 当前登录用户 (可选: 匿名 Web 端为 None)
 
     Returns:
         旅行计划响应
     """
     logger.info(
         f"收到旅行规划请求: 城市={request.city}, "
-        f"日期={request.start_date}~{request.end_date}, 天数={request.travel_days}"
+        f"日期={request.start_date}~{request.end_date}, 天数={request.travel_days}, "
+        f"用户={user.id if user else '匿名'}"
     )
 
     # 获取Agent实例并生成旅行计划 (异常由全局异常处理器统一兜底)
@@ -59,7 +68,9 @@ def plan_trip(request: TripRequest, db: Session = Depends(get_db)):
 
     # 生成成功 → 保存历史 + RAG 入库 (失败仅告警, 不影响主流程)
     try:
-        record = history_service.create_trip_record(db, request, trip_plan)
+        record = history_service.create_trip_record(
+            db, request, trip_plan, user_id=user.id if user else None
+        )
         get_rag_service().add_history_plan(record.id, request, trip_plan)
     except Exception as e:
         logger.warning(f"⚠️ 历史记录/RAG 保存失败(不影响行程): {e}")
@@ -86,13 +97,17 @@ def plan_trip(request: TripRequest, db: Session = Depends(get_db)):
         "任务结果保留 30 分钟, 过期后返回 404, 需重新创建任务。"
     ),
 )
-def create_trip_task(request: TripRequest):
+def create_trip_task(
+    request: TripRequest,
+    user: Optional[User] = Depends(get_optional_user),
+):
     """创建异步规划任务
 
     与同步 /plan 接口的区别: 不阻塞等待 LLM 生成, 适合小程序等
-    对请求超时有严格限制的客户端。生成成功后同样会保存历史 + RAG 入库。
+    对请求超时有严格限制的客户端。生成成功后同样会保存历史 + RAG 入库
+    (登录用户的历史记录挂到其名下, 供 /api/history 按用户查询)。
     """
-    task = get_task_manager().submit(request)
+    task = get_task_manager().submit(request, user_id=user.id if user else None)
     return TaskCreatedResponse(success=True, task_id=task.task_id, status=task.status)
 
 

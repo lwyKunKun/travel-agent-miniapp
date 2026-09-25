@@ -12,7 +12,9 @@ import type {
   TaskStatusResponse,
   HistoryListResponse,
   HistoryDetailResponse,
+  LoginResponse,
 } from '@/types'
+import { getToken, clearToken, ensureLogin } from '@/services/auth'
 
 // API 基地址: 开发期用本地, 上线改小程序后台配置的 HTTPS 合法域名
 // 也可通过 vite 定义的环境变量覆盖
@@ -27,14 +29,19 @@ interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE'
   data?: any
   header?: Record<string, string>
+  // 内部标记: 401 自动重登后的重试请求, 防止无限循环
+  _isRetry?: boolean
 }
 
 /**
  * 统一请求封装: 把 uni.request 的回调风格包装成 Promise
- * 非 2xx 或网络错误统一 reject(Error), 错误信息优先取后端 detail
+ * - 自动附带 Authorization: Bearer <token> (已登录时)
+ * - 401 响应 → 清除本地 token → 静默重登一次 → 自动重试原请求
+ * - 非 2xx 或网络错误统一 reject(Error), 错误信息优先取后端 detail
  */
 function request<T = any>(options: RequestOptions): Promise<T> {
   return new Promise((resolve, reject) => {
+    const token = getToken()
     uni.request({
       url: API_BASE_URL + options.url,
       method: options.method || 'GET',
@@ -42,10 +49,28 @@ function request<T = any>(options: RequestOptions): Promise<T> {
       timeout: REQUEST_TIMEOUT,
       header: {
         'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(options.header || {}),
       },
-      success: (res) => {
+      success: async (res) => {
         const status = res.statusCode
+
+        // 401: token 过期/无效 → 静默重登一次后重试 (仅一次, 防死循环)
+        if (status === 401 && !options._isRetry) {
+          clearToken()
+          const newToken = await ensureLogin()
+          if (newToken) {
+            try {
+              const retryResult = await request<T>({ ...options, _isRetry: true })
+              resolve(retryResult)
+            } catch (e) {
+              reject(e)
+            }
+            return
+          }
+          // 重登失败 → 按原 401 走错误分支
+        }
+
         if (status >= 200 && status < 300) {
           resolve(res.data as T)
         } else {
@@ -67,6 +92,19 @@ function request<T = any>(options: RequestOptions): Promise<T> {
         reject(new Error(err.errMsg || '网络请求失败, 请检查网络连接'))
       },
     })
+  })
+}
+
+// ============ 认证 ============
+
+/**
+ * 微信登录: code → JWT token (由 auth.ts 的 ensureLogin 调用)
+ */
+export function login(code: string): Promise<LoginResponse> {
+  return request<LoginResponse>({
+    url: '/api/auth/login',
+    method: 'POST',
+    data: { code },
   })
 }
 

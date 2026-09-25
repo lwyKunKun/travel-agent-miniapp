@@ -68,6 +68,16 @@ class Settings(BaseSettings):
     dashscope_api_key: str = Field(default="")
     embedding_model: str = Field(default="text-embedding-v4")
 
+    # 微信小程序登录配置
+    # wx_appid 未配置时自动进入 mock 登录模式 (本地开发联调用, 不调微信接口)
+    wx_appid: str = Field(default="")
+    wx_secret: str = Field(default="")
+
+    # JWT 配置
+    # jwt_secret 未配置时启动生成随机密钥 (进程重启后旧 token 失效, 生产环境必须显式配置)
+    jwt_secret: str = Field(default="")
+    jwt_expire_minutes: int = Field(default=60 * 24 * 7)  # 默认 7 天
+
     # 日志配置
     log_level: str = "INFO"
 
@@ -134,6 +144,8 @@ def print_config():
     print(f"LLM Temperature: {settings.llm_temperature}")
     print(f"LLM Timeout: {settings.llm_timeout}s")
     print(f"RAG 嵌入模型: {settings.embedding_model} ({'已配置' if settings.dashscope_api_key else '未配置(自动禁用)'})")
+    print(f"微信登录: {'已配置 AppID' if settings.wx_appid else '未配置(本地 mock 登录模式)'}")
+    print(f"JWT: {'已配置密钥' if settings.jwt_secret else '未配置(启动时生成随机密钥, 重启后旧 token 失效)'}, 有效期 {settings.jwt_expire_minutes} 分钟")
     print(f"日志级别: {settings.log_level}")
 
 

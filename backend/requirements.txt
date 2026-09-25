@@ -32,3 +32,6 @@ sqlalchemy>=2.0.0
 
 # 测试
 pytest>=8.0.0
+
+# JWT 认证 (微信登录 token 签发/校验)
+PyJWT>=2.8.0
