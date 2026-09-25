@@ -6,6 +6,9 @@
 # ================================================
 set -e
 
+# 始终切到脚本所在仓库目录, 避免在其他目录执行时 git 操作到错误仓库
+cd "$(dirname "$0")"
+
 SERVER="${1:-aliyun-stock}"
 TIMESTAMP=$(date '+%Y%m%d_%H%M%S')
 
@@ -37,8 +40,11 @@ ssh "${SERVER}" "
     BACKUP_DIR=~/travel-miniapp-backups/${TIMESTAMP}
     mkdir -p \${BACKUP_DIR}
     cd ~/travel-agent-miniapp/backend
-    cp .env docker-compose.override.yml \${BACKUP_DIR}/ 2>/dev/null || true
-    cp -r data \${BACKUP_DIR}/data 2>/dev/null || true
+    FAIL=0
+    cp .env \${BACKUP_DIR}/ 2>/dev/null || { echo '  ❌ .env 备份失败'; FAIL=1; }
+    cp docker-compose.override.yml \${BACKUP_DIR}/ 2>/dev/null || echo '  ⚠️ docker-compose.override.yml 不存在, 跳过'
+    cp -r data \${BACKUP_DIR}/data 2>/dev/null || { echo '  ❌ data/ 备份失败'; FAIL=1; }
+    if [ \$FAIL -eq 1 ]; then echo '  备份不完整, 中止部署'; exit 1; fi
     echo '  备份完成: '\${BACKUP_DIR}
 "
 echo ""
