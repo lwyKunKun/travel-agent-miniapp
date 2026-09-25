@@ -84,7 +84,17 @@ travel-agent-miniapp/
 │   ├── tests/                  # pytest (23 个测试, 隔离真实网络)
 │   ├── Dockerfile / docker-compose.yml
 │   └── requirements.txt
-└── frontend/                   # uniapp 小程序前端 (规划中)
+└── frontend/                   # uniapp 小程序前端 (Vue3 + TS + Vite)
+    ├── src/
+    │   ├── pages/
+    │   │   ├── index/          # 需求表单页 (目的地/日期/偏好)
+    │   │   ├── progress/       # 规划进度页 (轮询异步任务, 2秒/次)
+    │   │   ├── result/         # 行程结果页 (原生map组件+每日卡片+预算+天气)
+    │   │   └── history/        # 历史行程页 (分页/筛选/删除)
+    │   ├── services/api.ts     # uni.request 封装 + 异步任务/历史 API
+    │   ├── store/trip.ts       # 全局行程状态 (页面间中转)
+    │   └── types/index.ts      # TS 类型 (与后端 Pydantic 模型对齐)
+    └── .env.development        # 开发环境 API 地址
 ```
 
 ## 🚀 快速开始（后端）
@@ -103,13 +113,30 @@ python run.py                   # 启动后访问 http://localhost:8000/docs
 cd backend && pytest tests -q
 ```
 
-## 🗺️ 小程序前端规划（待开发）
+## 🚀 快速开始（前端 · 小程序）
 
-- **框架**：uniapp（Vue3 + TS + Vite）+ uvui/uview-plus 组件库
-- **地图**：uniapp 内置 `<map>` 组件（微信原生地图）渲染行程打点/路线
-- **登录**：微信登录（`wx.login` → 后端 code2session → JWT）
+```bash
+cd frontend
+npm install
+npm run dev:mp-weixin     # 产物在 dist/dev/mp-weixin, 用微信开发者工具导入该目录
+```
+
+- 微信开发者工具需勾选「**不校验合法域名**」才能请求本地 `http://localhost:8000`（见 `.env.development`）
+- H5 预览: `npm run dev:h5`
+- 生产构建: `npm run build:mp-weixin`
+- `manifest.json` 的 `mp-weixin.appid` 需填入你自己的小程序 AppID
+
+## 🗺️ 前端已实现
+
+- ✅ **需求表单页**：热门城市快选、日期选择（自动算天数、30天上限校验）、交通/住宿/偏好选择
+- ✅ **规划进度页**：每 2 秒轮询异步任务，真实进度条 + 阶段清单（搜景点→查天气→搜酒店→搜美食→AI生成），5 分钟超时兜底
+- ✅ **行程结果页**：原生 `<map>` 组件全览打点（景点+酒店 callout）、每日卡片（景点图/来源三色标签/门票/餐饮/酒店）、预算明细、天气预报表、降级警告横幅
+- ✅ **历史行程页**：分页加载 + 触底加载更多 + 下拉刷新 + 城市筛选 + 删除二次确认
+
+## 🗺️ 后续规划（待开发）
+
+- **登录**：微信登录（`wx.login` → 后端 code2session → JWT），历史记录按用户隔离
 - **分享**：canvas 绘制行程卡片 → 保存相册/转发好友
-- **页面**：需求表单页 → 规划进度页（轮询任务）→ 行程结果页 → 历史记录页
 
 ## ⚠️ 小程序上线注意事项
 

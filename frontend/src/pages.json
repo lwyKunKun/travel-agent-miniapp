@@ -1,0 +1,52 @@
+{
+	"pages": [
+		{
+			"path": "pages/index/index",
+			"style": {
+				"navigationBarTitleText": "智能旅行助手",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/progress/progress",
+			"style": {
+				"navigationBarTitleText": "AI 规划中"
+			}
+		},
+		{
+			"path": "pages/result/result",
+			"style": {
+				"navigationBarTitleText": "我的行程"
+			}
+		},
+		{
+			"path": "pages/history/history",
+			"style": {
+				"navigationBarTitleText": "历史行程",
+				"enablePullDownRefresh": true
+			}
+		}
+	],
+	"tabBar": {
+		"color": "#94a3b8",
+		"selectedColor": "#a5b4fc",
+		"backgroundColor": "#0f172a",
+		"borderStyle": "black",
+		"list": [
+			{
+				"path": "pages/index/index",
+				"text": "规划"
+			},
+			{
+				"path": "pages/history/history",
+				"text": "历史"
+			}
+		]
+	},
+	"globalStyle": {
+		"navigationBarTextStyle": "white",
+		"navigationBarTitleText": "智能旅行助手",
+		"navigationBarBackgroundColor": "#0f172a",
+		"backgroundColor": "#0f172a"
+	}
+}
