@@ -2,6 +2,18 @@
 
 基于 **LangChain + LangGraph + FastAPI** 的智能旅行规划助手**小程序版本**（uniapp），后端复用自 [langchain-travel-agent](https://github.com/lwyKunKun/travel-agent)，并针对微信小程序的请求超时限制做了**异步任务化改造**。
 
+## 📸 界面预览
+
+![首页 - 旅行需求表单](docs/screenshots/home.png)
+
+![首页 - 旅行需求表单2](docs/screenshots/home2.png)
+
+![行程结果页 - 每日行程与地图](docs/screenshots/result.png)
+
+![行程结果页 - 行程详情](docs/screenshots/result1.png) ![行程结果页 - 行程详情](docs/screenshots/result2.png)
+
+![历史记录页 - 历史行程管理](docs/screenshots/history.png)
+
 ## ✨ 项目定位
 
 - 🎯 **前端**：uniapp（Vue3 + TypeScript），一套代码编译到微信小程序 / H5

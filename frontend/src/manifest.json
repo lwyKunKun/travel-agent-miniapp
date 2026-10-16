@@ -1,6 +1,6 @@
 {
     "name" : "智能旅行助手",
-    "appid" : "",
+    "appid" : "wx763d2163d13c4bbf",
     "description" : "基于 LangChain + LangGraph + FastAPI 的智能旅行规划助手小程序版",
     "versionName" : "1.0.0",
     "versionCode" : "100",
@@ -50,7 +50,7 @@
     "quickapp" : {},
     /* 小程序特有相关 */
     "mp-weixin" : {
-        "appid" : "",
+        "appid" : "wx763d2163d13c4bbf",
         "setting" : {
             "urlCheck" : false
         },
