@@ -154,5 +154,5 @@ npm run dev:mp-weixin     # 产物在 dist/dev/mp-weixin, 用微信开发者工�
 ## ⚠️ 小程序上线注意事项
 
 1. 正式版只能请求**已备案的 HTTPS 域名**，需在小程序后台配置 request 合法域名
-2. 景点图片走高德 POI 国内 CDN，需将图片域名加入 **downloadFile 合法域名**
+2. 景点图片走高德 POI 国内 CDN，需将图片域名加入 **downloadFile 合法域名**：`https://store.is.autonavi.com`（主图源，约 90%）和 `https://aos-comment.amap.com`（点评图，约 10%），可选再加通配符 `https://*.autonavi.com`、`https://*.amap.com` 兜底
 3. 类目建议选择「工具 > 信息查询」，纯规划工具定位可规避旅行社资质要求
