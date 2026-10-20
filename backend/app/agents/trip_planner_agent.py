@@ -25,6 +25,9 @@ from ..models.schemas import (
 
 logger = logging.getLogger(__name__)
 
+MAX_DAYS_PER_CHUNK = 5
+MAX_CHUNK_ATTEMPTS = 2
+
 # ============ 行程规划提示词 ============
 
 PLANNER_SYSTEM_PROMPT = """你是专业的行程规划专家。根据用户提供的景点、天气和酒店信息, 生成详细的旅行计划。
@@ -99,6 +102,7 @@ PLANNER_SYSTEM_PROMPT = """你是专业的行程规划专家。根据用户提�
 5. 景点/酒店的经纬度坐标必须使用提供的真实坐标; 本提示词示例中的北京坐标(116.397128, 39.916527)仅为格式演示, 严禁照抄到输出中
 6. 所有费用字段填写合理估算值, budget 为各项费用汇总
 7. overall_suggestions 必须具体详细(150字以上): 结合当地气候、交通、最佳游览时段、避坑提示等给出可执行建议, 禁止只写一句套话
+8. 用户要求生成日期分块时, 只能输出指定日期, 顶层起止日期和每个全局 day_index 必须与用户要求一致
 """
 
 
@@ -224,43 +228,231 @@ class MultiAgentTripPlanner:
             return {"meal_pois": []}
 
     def _generate_trip_plan(self, state: GraphState) -> dict:
-        """节点4: LLM 生成行程计划
-
-        采用「文本生成 + JSON提取 + Pydantic校验」的通用方案, 兼容任何模型
-        (包括不支持 function calling / json_schema 的 thinking 模型)。
-        解析失败时携带错误信息自纠错重试一次, 仍失败则走备用计划。
-        """
+        """节点4: 按最多5天分块生成行程，失败块单独使用真实POI兜底。"""
         request = state["request"]
-        logger.info("📋 步骤4: LLM 生成行程计划...")
+        chunks = self._split_date_chunks(request)
+        chunk_plans: List[TripPlan] = []
+        used_attractions: List[str] = []
+        used_meals: List[str] = []
+
+        logger.info(f"📋 步骤4: LLM 分{len(chunks)}块生成行程计划...")
         try:
-            planner_query = self._build_planner_query(request, state)
-            prompt_template = ChatPromptTemplate.from_messages([
-                ("system", PLANNER_SYSTEM_PROMPT),
-                ("human", "{query}"),
-            ])
-            chain = prompt_template | self.llm 
-
-            for attempt in range(2):
-                response = chain.invoke({"query": planner_query})
-                content = response.content if hasattr(response, "content") else str(response)
+            global_start_index = 0
+            for chunk_index, chunk_dates in enumerate(chunks):
+                label = (
+                    f"第{chunk_index + 1}/{len(chunks)}块"
+                    f"（{chunk_dates[0]} 至 {chunk_dates[-1]}）"
+                )
+                logger.info(f"   生成{label}")
                 try:
-                    trip_plan = self._parse_json_response(content)
-                    logger.info("   ✅ 行程计划生成成功")
-                    return {"trip_plan": trip_plan, "error": False}
-                except Exception as e:
-                    logger.warning(f"   ⚠️ 第{attempt + 1}次解析失败: {str(e)[:100]}")
-                    # 自纠错: 把校验错误反馈给LLM, 要求重新生成
-                    planner_query = (
-                        f"你上一次输出的 JSON 不符合结构要求, 错误信息: {e}\n"
-                        f"你上一次的输出是: {content[:2000]}\n"
-                        f"请严格按照 system 中定义的 JSON 结构重新输出完整 JSON。\n\n"
-                        f"原始需求:\n{planner_query}"
+                    chunk_plan = self._generate_chunk(
+                        request=request,
+                        state=state,
+                        chunk_dates=chunk_dates,
+                        chunk_start_index=global_start_index,
+                        used_attractions=used_attractions,
+                        used_meals=used_meals,
                     )
+                except Exception as exc:
+                    reason = f"{label}生成失败：{str(exc)[:160]}"
+                    logger.warning(f"   ⚠️ {reason}，仅对此块启用真实POI兜底")
+                    chunk_request = request.model_copy(update={
+                        "start_date": chunk_dates[0],
+                        "end_date": chunk_dates[-1],
+                        "travel_days": len(chunk_dates),
+                    })
+                    chunk_plan = self._create_fallback_plan(
+                        chunk_request,
+                        attraction_pois=self._prioritize_unused_pois(
+                            state.get("attraction_pois") or [], used_attractions
+                        ),
+                        hotel_pois=state.get("hotel_pois") or [],
+                        meal_pois=self._prioritize_unused_pois(
+                            state.get("meal_pois") or [], used_meals
+                        ),
+                        weather_info=state.get("weather_info") or [],
+                        reason=reason,
+                    )
+                    for offset, day in enumerate(chunk_plan.days):
+                        day.day_index = global_start_index + offset
+                        # 兜底块按块内第几天生成描述， 并入完整行程后需同步全局编号，
+                        # 否则 day_index 显示第6天、描述却写第1天， 前后矛盾
+                        day.description = re.sub(
+                            r"^第\d+天",
+                            f"第{global_start_index + offset + 1}天",
+                            day.description,
+                            count=1,
+                        )
 
-            raise ValueError("两次尝试均未能生成合法行程计划")
-        except Exception as e:
-            logger.error(f"   ❌ LLM 生成行程失败(将走兜底计划): {e}")
-            return {"error": True, "error_reason": str(e)[:200]}
+                chunk_plans.append(chunk_plan)
+                self._append_used_names(chunk_plan, used_attractions, used_meals)
+                global_start_index += len(chunk_dates)
+
+            trip_plan = self._merge_chunk_plans(request, chunk_plans)
+            self._validate_merged_plan(trip_plan, request)
+            logger.info(f"   ✅ {len(chunks)}个行程分块全部处理完成")
+            return {"trip_plan": trip_plan, "error": False}
+        except Exception as exc:
+            logger.error(f"   ❌ 分块生成无法完成(将走整单兜底): {exc}")
+            return {"error": True, "error_reason": str(exc)[:200]}
+
+    @staticmethod
+    def _split_date_chunks(request: TripRequest) -> List[List[str]]:
+        start = datetime.strptime(request.start_date, "%Y-%m-%d")
+        dates = [
+            (start + timedelta(days=offset)).strftime("%Y-%m-%d")
+            for offset in range(request.travel_days)
+        ]
+        return [
+            dates[index:index + MAX_DAYS_PER_CHUNK]
+            for index in range(0, len(dates), MAX_DAYS_PER_CHUNK)
+        ]
+
+    def _invoke_planner(self, planner_query: str) -> str:
+        prompt_template = ChatPromptTemplate.from_messages([
+            ("system", PLANNER_SYSTEM_PROMPT),
+            ("human", "{query}"),
+        ])
+        response = (prompt_template | self.llm).invoke({"query": planner_query})
+        return response.content if hasattr(response, "content") else str(response)
+
+    def _generate_chunk(
+        self,
+        request: TripRequest,
+        state: GraphState,
+        chunk_dates: List[str],
+        chunk_start_index: int,
+        used_attractions: List[str],
+        used_meals: List[str],
+    ) -> TripPlan:
+        base_query = self._build_planner_query(
+            request,
+            state,
+            chunk_dates=chunk_dates,
+            chunk_start_index=chunk_start_index,
+            used_attractions=used_attractions,
+            used_meals=used_meals,
+        )
+        last_error: Exception = ValueError("未知生成错误")
+
+        for attempt in range(MAX_CHUNK_ATTEMPTS):
+            query = base_query
+            if attempt:
+                query = (
+                    f"上一次当前分块输出不符合要求，错误信息：{last_error}\n"
+                    f"上一次输出片段：{content[:2000]}\n"
+                    "请只重新输出当前分块的完整 JSON。\n\n"
+                    f"当前分块原始需求：\n{base_query}"
+                )
+            try:
+                content = self._invoke_planner(query)
+                chunk_plan = self._parse_json_response(content)
+                self._validate_chunk_plan(
+                    chunk_plan, request, chunk_dates, chunk_start_index
+                )
+                return chunk_plan
+            except Exception as exc:
+                last_error = exc
+                content = locals().get("content", "")
+                logger.warning(
+                    f"   ⚠️ 分块第{attempt + 1}次生成或校验失败: {str(exc)[:120]}"
+                )
+
+        raise ValueError(
+            f"{MAX_CHUNK_ATTEMPTS}次尝试均未生成合法分块：{str(last_error)[:160]}"
+        )
+
+    @staticmethod
+    def _validate_chunk_plan(
+        chunk_plan: TripPlan,
+        request: TripRequest,
+        chunk_dates: List[str],
+        chunk_start_index: int,
+    ) -> None:
+        if chunk_plan.city.strip() != request.city.strip():
+            raise ValueError("分块城市与请求不一致")
+        if chunk_plan.start_date != chunk_dates[0] or chunk_plan.end_date != chunk_dates[-1]:
+            raise ValueError("分块起止日期与请求不一致")
+        if len(chunk_plan.days) != len(chunk_dates):
+            raise ValueError(
+                f"分块应包含{len(chunk_dates)}天，实际返回{len(chunk_plan.days)}天"
+            )
+
+        for offset, (day, expected_date) in enumerate(zip(chunk_plan.days, chunk_dates)):
+            expected_index = chunk_start_index + offset
+            if day.date != expected_date:
+                raise ValueError(f"第{expected_index + 1}天日期应为{expected_date}")
+            if day.day_index != expected_index:
+                raise ValueError(f"{expected_date}的day_index应为{expected_index}")
+            if not 2 <= len(day.attractions) <= 3:
+                raise ValueError(f"{expected_date}必须包含2至3个景点")
+            meal_types = {meal.type.strip().lower() for meal in day.meals}
+            missing = {"breakfast", "lunch", "dinner"} - meal_types
+            if missing:
+                raise ValueError(
+                    f"{expected_date}缺少餐饮类型：{', '.join(sorted(missing))}"
+                )
+
+    @staticmethod
+    def _append_used_names(
+        chunk_plan: TripPlan,
+        used_attractions: List[str],
+        used_meals: List[str],
+    ) -> None:
+        for day in chunk_plan.days:
+            for attraction in day.attractions:
+                if attraction.name and attraction.name not in used_attractions:
+                    used_attractions.append(attraction.name)
+            for meal in day.meals:
+                if meal.name and meal.name not in used_meals:
+                    used_meals.append(meal.name)
+
+    @staticmethod
+    def _prioritize_unused_pois(
+        pois: List[POIInfo], used_names: List[str]
+    ) -> List[POIInfo]:
+        used = set(used_names)
+        return [poi for poi in pois if poi.name not in used] + [
+            poi for poi in pois if poi.name in used
+        ]
+
+    @staticmethod
+    def _merge_chunk_plans(
+        request: TripRequest, chunk_plans: List[TripPlan]
+    ) -> TripPlan:
+        days: List[DayPlan] = []
+        suggestions: List[str] = []
+        fallback_reasons: List[str] = []
+
+        for chunk_plan in chunk_plans:
+            days.extend(chunk_plan.days)
+            suggestion = chunk_plan.overall_suggestions.strip()
+            if suggestion and suggestion not in suggestions:
+                suggestions.append(suggestion)
+            if chunk_plan.is_fallback and chunk_plan.fallback_reason:
+                fallback_reasons.append(chunk_plan.fallback_reason)
+
+        return TripPlan(
+            city=request.city,
+            start_date=request.start_date,
+            end_date=request.end_date,
+            days=days,
+            weather_info=[],
+            overall_suggestions="\n\n".join(suggestions),
+            budget=None,
+            is_fallback=bool(fallback_reasons),
+            fallback_reason="\n".join(fallback_reasons),
+        )
+
+    @staticmethod
+    def _validate_merged_plan(trip_plan: TripPlan, request: TripRequest) -> None:
+        if len(trip_plan.days) != request.travel_days:
+            raise ValueError("合并后的行程天数与请求不一致")
+        start = datetime.strptime(request.start_date, "%Y-%m-%d")
+        for index, day in enumerate(trip_plan.days):
+            expected_date = (start + timedelta(days=index)).strftime("%Y-%m-%d")
+            if day.date != expected_date or day.day_index != index:
+                raise ValueError(f"合并后的第{index + 1}天日期或索引不连续")
 
     def _fallback_plan(self, state: GraphState) -> dict:
         """节点5: 备用计划 (LLM失败时兜底)
@@ -435,27 +627,56 @@ class MultiAgentTripPlanner:
         data = json.loads(content[start:end + 1])
         return TripPlan.model_validate(data)
 
-    def _build_planner_query(self, request: TripRequest, state: GraphState) -> str:
-        """构建行程规划 prompt (将结构化数据转为文本供LLM参考)"""
+    def _build_planner_query(
+        self,
+        request: TripRequest,
+        state: GraphState,
+        chunk_dates: List[str] = None,
+        chunk_start_index: int = 0,
+        used_attractions: List[str] = None,
+        used_meals: List[str] = None,
+    ) -> str:
+        """构建当前分块的行程规划 prompt。"""
+        chunk_dates = chunk_dates or [
+            day
+            for chunk in self._split_date_chunks(request)
+            for day in chunk
+        ]
+        used_attractions = used_attractions or []
+        used_meals = used_meals or []
         attraction_text = self._pois_to_text(state.get("attraction_pois", []))
         hotel_text = self._pois_to_text(state.get("hotel_pois", []))
         meal_text = self._pois_to_text(state.get("meal_pois", []))
-        weather_text = self._weather_to_text(state.get("weather_info", []))
+        chunk_weather = [
+            item for item in state.get("weather_info", [])
+            if item.date in set(chunk_dates)
+        ]
+        weather_text = self._weather_to_text(chunk_weather)
+        date_lines = "\n".join(
+            f"- {day}，day_index={chunk_start_index + offset}"
+            for offset, day in enumerate(chunk_dates)
+        )
 
-        query = f"""请为以下旅行需求生成{request.city}的{request.travel_days}天行程计划:
+        query = f"""请为{request.city}完整{request.travel_days}天旅行生成其中一个行程分块。
 
-**基本信息:**
+**完整旅行信息:**
+- 完整日期: {request.start_date} 至 {request.end_date}
+- 完整天数: {request.travel_days}天
 - 城市: {request.city}
-- 日期: {request.start_date} 至 {request.end_date}
-- 天数: {request.travel_days}天
 - 交通方式: {request.transportation}
 - 住宿偏好: {request.accommodation}
 - 旅行偏好: {', '.join(request.preferences) if request.preferences else '无'}
 
+**本次分块要求:**
+- 只生成 {chunk_dates[0]} 至 {chunk_dates[-1]}，共{len(chunk_dates)}天
+- 顶层 start_date 必须为 {chunk_dates[0]}，end_date 必须为 {chunk_dates[-1]}
+- days 必须且只能按以下日期和全局索引输出，不得补写其他日期:
+{date_lines}
+
 **可选景点:**
 {attraction_text or '无'}
 
-**天气信息:**
+**本分块天气信息:**
 {weather_text or '无'}
 
 **可选酒店:**
@@ -464,12 +685,21 @@ class MultiAgentTripPlanner:
 **可选美食店铺(早中晚三餐请优先从中选择真实店铺):**
 {meal_text or '无'}
 """
+        if used_attractions:
+            query += (
+                "\n**此前已使用景点（候选充足时请避免重复）:**\n- "
+                + "\n- ".join(used_attractions[-60:])
+                + "\n"
+            )
+        if used_meals:
+            query += (
+                "\n**此前已使用餐厅（候选充足时请避免重复）:**\n- "
+                + "\n- ".join(used_meals[-90:])
+                + "\n"
+            )
         if request.free_text_input:
             query += f"\n**额外要求:** {request.free_text_input}\n"
 
-        # RAG 增强: 检索城市旅游知识 + 相似历史行程, 注入 prompt 作为参考。
-        # 知识库让行程更贴合当地实际(门票/交通/避坑), 历史行程让风格更稳定。
-        # RAG 未启用或检索失败时跳过, 不影响正常生成。
         try:
             from ..services.rag_service import get_rag_service
 
@@ -479,7 +709,7 @@ class MultiAgentTripPlanner:
         except Exception as e:
             logger.warning(f"⚠️ RAG 上下文注入失败(不影响生成): {e}")
 
-        query += "\n请严格按照 system 中定义的 JSON 结构输出完整 JSON。"
+        query += "\n请严格按照 system 中定义的 JSON 结构，只输出本分块的完整 JSON。"
         return query
 
     @staticmethod

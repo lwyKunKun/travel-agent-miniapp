@@ -9,9 +9,9 @@
       </view>
     </view>
 
-    <!-- 降级警告横幅 (LLM 失败兜底时展示, 不伪装成功) -->
+    <!-- 降级警告横幅 (部分或全部分块失败兜底时展示, 不伪装成功) -->
     <view v-if="plan.is_fallback" class="fallback-banner">
-      ⚠️ 降级模式：AI 生成失败，当前行程由高德真实数据兜底生成{{ plan.fallback_reason ? '（' + plan.fallback_reason + '）' : '' }}
+      ⚠️ 部分或全部日期已使用降级兜底数据，对应日期由高德真实数据生成{{ plan.fallback_reason ? '（' + plan.fallback_reason + '）' : '' }}
     </view>
 
     <!-- 行程地图 (小程序原生 map 组件, 替代 Web 版高德 JS API) -->

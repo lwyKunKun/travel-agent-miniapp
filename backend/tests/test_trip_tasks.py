@@ -114,6 +114,45 @@ def test_task_failed(client: TestClient):
         assert final["data"] is None
 
 
+def test_task_with_partial_fallback_chunk_completes(client: TestClient):
+    """长行程分块生成: 某块局部兜底时任务仍 completed, 降级标记与原因透传到结果"""
+    fake_agent = MagicMock()
+    fake_agent.plan_trip.return_value = make_fake_plan().model_copy(update={
+        "is_fallback": True,
+        "fallback_reason": "第2/2块（2026-10-02 至 2026-10-02）生成失败：模拟",
+    })
+
+    with patch(
+        "app.agents.trip_planner_agent.get_trip_planner_agent",
+        return_value=fake_agent,
+    ), patch("app.services.history_service.create_trip_record") as m_hist, patch(
+        "app.services.rag_service.get_rag_service"
+    ):
+        m_hist.return_value.id = 1
+
+        resp = client.post("/api/trip/tasks", json=VALID_REQUEST)
+        assert resp.status_code == 200
+        task_id = resp.json()["task_id"]
+
+        final = wait_until_finished(client, task_id)
+        assert final["status"] == "completed"
+        assert final["data"]["is_fallback"] is True
+        assert "第2/2块" in final["data"]["fallback_reason"]
+
+
+def test_task_rejects_mismatched_days_before_agent(client: TestClient):
+    """分块请求校验: 日期跨度与 travel_days 不一致应 422, 不创建任务、不调用 Agent"""
+    fake_agent = MagicMock()
+    with patch(
+        "app.agents.trip_planner_agent.get_trip_planner_agent",
+        return_value=fake_agent,
+    ):
+        bad = {**VALID_REQUEST, "travel_days": 5}  # 日期跨度实际为2天
+        resp = client.post("/api/trip/tasks", json=bad)
+        assert resp.status_code == 422
+        fake_agent.plan_trip.assert_not_called()
+
+
 def test_task_request_validation(client: TestClient):
     """非法请求体 (缺字段/天数越界) 应返回 422, 不创建任务"""
     bad = {**VALID_REQUEST, "travel_days": 99}

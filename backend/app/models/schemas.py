@@ -1,8 +1,10 @@
 """数据模型定义"""
 
-from typing import List, Optional, Union
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+import re
 from datetime import date
+from typing import List, Optional, Union
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 # ============ 请求模型 ============
@@ -15,8 +17,33 @@ class TripRequest(BaseModel):
     travel_days: int = Field(..., description="旅行天数", ge=1, le=30, json_schema_extra={"example": 3})
     transportation: str = Field(..., description="交通方式", json_schema_extra={"example": "公共交通"})
     accommodation: str = Field(..., description="住宿偏好", json_schema_extra={"example": "经济型酒店"})
-    preferences: List[str] = Field(default=[], description="旅行偏好标签", json_schema_extra={"example": ["历史文化", "美食"]})
+    preferences: List[str] = Field(default_factory=list, description="旅行偏好标签", json_schema_extra={"example": ["历史文化", "美食"]})
     free_text_input: Optional[str] = Field(default="", description="额外要求", json_schema_extra={"example": "希望多安排一些博物馆"})
+
+    @model_validator(mode="after")
+    def validate_date_range(self) -> "TripRequest":
+        parsed_dates = {}
+        for field_name in ("start_date", "end_date"):
+            value = getattr(self, field_name)
+            if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+                raise ValueError(f"{field_name} 必须为 YYYY-MM-DD 格式")
+            try:
+                parsed_dates[field_name] = date.fromisoformat(value)
+            except ValueError as exc:
+                raise ValueError(f"{field_name} 必须为有效的 YYYY-MM-DD 日期") from exc
+
+        start = parsed_dates["start_date"]
+        end = parsed_dates["end_date"]
+        if end < start:
+            raise ValueError("end_date 不能早于 start_date")
+
+        expected_days = (end - start).days + 1
+        if self.travel_days != expected_days:
+            raise ValueError(
+                "travel_days 必须与起止日期包含的自然日天数一致，"
+                f"期望 {expected_days}，实际 {self.travel_days}"
+            )
+        return self
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -107,8 +134,8 @@ class DayPlan(BaseModel):
     transportation: str = Field(..., description="交通方式")
     accommodation: str = Field(..., description="住宿")
     hotel: Optional[Hotel] = Field(default=None, description="推荐酒店")
-    attractions: List[Attraction] = Field(default=[], description="景点列表")
-    meals: List[Meal] = Field(default=[], description="餐饮列表")
+    attractions: List[Attraction] = Field(default_factory=list, description="景点列表")
+    meals: List[Meal] = Field(default_factory=list, description="餐饮列表")
 
 
 class WeatherInfo(BaseModel):
@@ -152,11 +179,10 @@ class TripPlan(BaseModel):
     start_date: str = Field(..., description="开始日期")
     end_date: str = Field(..., description="结束日期")
     days: List[DayPlan] = Field(..., description="每日行程")
-    weather_info: List[WeatherInfo] = Field(default=[], description="天气信息")
+    weather_info: List[WeatherInfo] = Field(default_factory=list, description="天气信息")
     overall_suggestions: str = Field(..., description="总体建议")
     budget: Optional[Budget] = Field(default=None, description="预算信息")
-    # 降级标记: LLM 生成失败走兜底计划时置 True, 前端据此提示用户数据非 LLM 生成
-    is_fallback: bool = Field(default=False, description="是否为降级兜底数据(LLM未参与生成)")
+    is_fallback: bool = Field(default=False, description="是否包含部分或全部降级兜底行程")
     fallback_reason: str = Field(default="", description="降级原因说明")
 
 

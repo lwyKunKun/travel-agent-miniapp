@@ -112,7 +112,7 @@ async function poll() {
       clearTimer()
       finished.value = true
       progress.value = 100
-      // 降级模式提示 (LLM 失败用高德数据兜底, 不伪装成功)
+      // 降级模式提示 (部分或全部分块失败用高德数据兜底, 不伪装成功)
       if (res.data.is_fallback) {
         uni.showToast({ title: '已生成(降级模式)', icon: 'none', duration: 2500 })
       }

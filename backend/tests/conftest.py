@@ -18,6 +18,9 @@ os.environ["AMAP_API_KEY"] = "test_amap_key"
 os.environ["LLM_API_KEY"] = "test_llm_key"
 os.environ["LLM_BASE_URL"] = "http://localhost:9999/v1"  # 无效端点, 防止误发请求
 os.environ["LLM_MODEL_ID"] = "test-model"
+# 强制微信 mock 登录模式: .env 里配置了真实 WX_APPID 时,
+# auth 测试会误调真实微信 code2session 接口导致 401 失败
+os.environ["WX_APPID"] = ""
 # 独立临时数据库: 不读写开发库 data/trip_planner.db, 避免残留数据影响断言
 # (如 is_new_user 判定); 每次 pytest 会话都是全新库
 os.environ["TRIP_DB_PATH"] = str(Path(tempfile.mkdtemp(prefix="trip_test_db_")) / "test.db")
