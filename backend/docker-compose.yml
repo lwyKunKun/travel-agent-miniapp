@@ -1,5 +1,7 @@
-# 智能旅行规划助手 - 后端服务编排
+# 智能旅行规划助手(小程序版) - 后端服务编排
 # 使用: docker compose up -d --build
+# 显式项目名, 避免与其他 backend 目录的 compose 项目撞名 (2026-10-20 曾被 Web 版撞名误杀容器)
+name: travel-miniapp
 services:
   backend:
     build: .
