@@ -16,6 +16,10 @@ env/
 # 环境变量 (密钥绝不入库)
 .env
 .env.local
+.env*.bak
+
+# 微信开发者工具私有配置
+project.private.config.json
 
 # IDE
 .vscode/
