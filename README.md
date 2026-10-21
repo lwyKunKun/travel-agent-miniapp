@@ -119,8 +119,9 @@ travel-agent-miniapp/
 cd backend
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env            # 填入高德 Key / LLM Key / (可选)DashScope Key
-python run.py                   # 启动后访问 http://localhost:8000/docs
+[ -f .env ] || cp .env.example .env  # 仅首次创建；已有 .env 时不要覆盖
+# 首次创建后，在 .env 中填入高德 Key / LLM Key /（可选）DashScope Key
+python3 run.py                   # 启动后访问 http://localhost:8000/docs
 ```
 
 运行测试：
@@ -131,15 +132,24 @@ cd backend && pytest tests -q
 
 ## 🚀 快速开始（前端 · 小程序）
 
+项目已拆分开发和生产环境，API 地址分别由模式文件管理：
+
+| 环境 | 命令 | API 地址 | 微信开发者工具导入目录 |
+|------|------|----------|------------------------|
+| 开发 | `npm run dev:mp-weixin` | `http://localhost:8000` | `frontend/dist/dev/mp-weixin` |
+| 生产 | `npm run build:mp-weixin` | `https://lwylangchain.cn` | `frontend/dist/build/mp-weixin` |
+
 ```bash
 cd frontend
 npm install
-npm run dev:mp-weixin     # 产物在 dist/dev/mp-weixin, 用微信开发者工具导入该目录
+npm run dev:mp-weixin
 ```
 
-- 微信开发者工具需勾选「**不校验合法域名**」才能请求本地 `http://localhost:8000`（见 `.env.development`）
-- H5 预览: `npm run dev:h5`
-- 生产构建: `npm run build:mp-weixin`
+- 开发环境配置在 `.env.development`，微信开发者工具需勾选「**不校验合法域名、web-view（业务域名）、TLS 版本以及 HTTPS 证书**」
+- 生产环境配置在 `.env.production`，正式域名需已加入微信小程序 request 合法域名
+- 手机真机上的 `localhost` 指向手机自身，不能访问电脑后端；真机测试请使用生产构建
+- 切换环境后必须重新运行对应构建命令，并在微信开发者工具中导入对应的 `dist` 目录
+- H5 开发预览：`npm run dev:h5`
 - `manifest.json` 的 `mp-weixin.appid` 需填入你自己的小程序 AppID
 
 ## 🗺️ 前端已实现

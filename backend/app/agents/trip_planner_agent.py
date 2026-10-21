@@ -3,8 +3,9 @@
 import json
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
-from typing import TypedDict, List
+from typing import Dict, Optional, TypedDict, List
 from langgraph.graph import StateGraph, START, END
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
@@ -572,6 +573,11 @@ class MultiAgentTripPlanner:
         except Exception as e:
             logger.warning(f"⚠️  来源标注/知识库增强失败(不影响主流程): {e}")
 
+        # 景点图片: 高德POI实景照片回填到 image_url, 供前端结果页展示。
+        # 图片不走LLM(模型无真实图源), 在计划生成后按景点名逐个取图;
+        # 服务内置1小时缓存和QPS熔断, 同名景点只请求一次, 失败静默跳过。
+        self._fill_attraction_images(trip_plan)
+
         logger.info(f"\n{'='*60}")
         logger.info(f"✅ 旅行计划生成完成! 天数: {len(trip_plan.days)}")
         logger.info(f"{'='*60}\n")
@@ -586,6 +592,44 @@ class MultiAgentTripPlanner:
         }
 
     # ============ 内部工具方法 ============
+
+    def _fill_attraction_images(self, trip_plan: TripPlan) -> None:
+        """为行程中的景点回填实景图片 (高德POI照片)
+
+        在 plan_trip 末尾对最终计划统一回填(含LLM生成与兜底计划两条路径),
+        按景点名调用高德取图服务写入 image_url。并发4线程以缩短总耗时
+        (LLM生成已30s+, 串行取图会进一步拉长响应); 服务侧有1小时缓存和
+        QPS熔断保护, 触发限流时自动短路, 取不到的景点前端会隐藏图片位。
+        """
+        unique_names = list({
+            (attr.name or "").strip()
+            for day in trip_plan.days
+            for attr in day.attractions
+            if attr.name and attr.name.strip() and not attr.image_url
+        })
+        if not unique_names:
+            return
+
+        name_to_url: Dict[str, Optional[str]] = {}
+
+        def _fetch(name: str) -> None:
+            try:
+                name_to_url[name] = self.amap_service.get_poi_photo_by_name(name)
+            except Exception as e:
+                logger.warning(f"   ⚠️ 景点图片获取失败({name}): {e}")
+                name_to_url[name] = None
+
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            list(executor.map(_fetch, unique_names))
+
+        filled = 0
+        for day in trip_plan.days:
+            for attr in day.attractions:
+                url = name_to_url.get((attr.name or "").strip())
+                if url and not attr.image_url:
+                    attr.image_url = url
+                    filled += 1
+        logger.info(f"   🖼️ 景点图片回填完成: {filled}张 / 共{len(unique_names)}个景点")
 
     @staticmethod
     def _match_candidate(name: str, candidates: List[str]) -> bool:

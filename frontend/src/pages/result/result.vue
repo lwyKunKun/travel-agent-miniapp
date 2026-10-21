@@ -45,30 +45,32 @@
 
       <!-- 景点列表 -->
       <view v-for="(item, idx) in day.attractions" :key="idx" class="spot-card">
-        <image
-          v-if="item.image_url"
-          class="spot-img"
-          :src="item.image_url"
-          mode="aspectFill"
-          lazy-load
-          @error="(e: any) => onImgError(e)"
-        />
-        <view class="spot-info">
-          <view class="spot-name">{{ idx + 1 }}. {{ item.name }}</view>
-          <!-- 来源标签: 高德蓝 / 知识库绿 / AI橙 -->
-          <view class="spot-tags">
-            <text
-              v-for="src in item.sources || []"
-              :key="src"
-              class="tag"
-              :class="sourceClass(src)"
-            >{{ src }}</text>
-            <text v-if="item.ticket_price" class="tag tag-price">🎫 ¥{{ item.ticket_price }}</text>
-            <text v-if="item.visit_duration" class="tag tag-duration">⏱️ {{ item.visit_duration }}分钟</text>
+        <view class="spot-main">
+          <image
+            v-if="item.image_url"
+            class="spot-img"
+            :src="item.image_url"
+            mode="aspectFill"
+            lazy-load
+            @error="(e: any) => onImgError(e)"
+          />
+          <view class="spot-info">
+            <view class="spot-name">{{ idx + 1 }}. {{ item.name }}</view>
+            <!-- 来源标签: 高德蓝 / 知识库绿 / AI橙 -->
+            <view class="spot-tags">
+              <text
+                v-for="src in item.sources || []"
+                :key="src"
+                class="tag"
+                :class="sourceClass(src)"
+              >{{ src }}</text>
+              <text v-if="item.ticket_price" class="tag tag-price">🎫 ¥{{ item.ticket_price }}</text>
+              <text v-if="item.visit_duration" class="tag tag-duration">⏱️ {{ item.visit_duration }}分钟</text>
+            </view>
+            <view class="spot-addr" v-if="item.address">📍 {{ item.address }}</view>
           </view>
-          <view class="spot-addr" v-if="item.address">📍 {{ item.address }}</view>
-          <view class="spot-desc" v-if="item.description">{{ item.description }}</view>
         </view>
+        <view class="spot-desc" v-if="item.description">{{ item.description }}</view>
       </view>
 
       <!-- 餐饮 -->
@@ -369,12 +371,15 @@ function goHome() {
 
 /* 景点卡片 */
 .spot-card {
-  display: flex;
   background: rgba(15, 23, 42, 0.5);
   border: 1rpx solid rgba(255, 255, 255, 0.08);
   border-radius: 16rpx;
   padding: 20rpx;
   margin-bottom: 16rpx;
+}
+
+.spot-main {
+  display: flex;
 }
 
 .spot-img {
@@ -423,12 +428,11 @@ function goHome() {
 }
 
 .spot-desc {
+  margin-top: 16rpx;
   font-size: 24rpx;
+  line-height: 1.65;
   color: rgba(226, 232, 240, 0.75);
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  overflow: hidden;
+  word-break: break-all;
 }
 
 /* 餐饮/酒店 */
