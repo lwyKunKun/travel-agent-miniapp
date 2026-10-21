@@ -45,7 +45,7 @@
  * 生命周期:
  * - onLoad 拿 task_id → 开始轮询 GET /api/trip/tasks/{id}
  * - completed → 行程写入全局 store, redirectTo 结果页
- * - failed / 404(任务过期) / 超时5分钟 → 展示错误 + 返回按钮
+ * - failed / 404(任务过期) / 超时10分钟 → 展示错误 + 返回按钮
  * - onUnload → 清理定时器 (用户中途返回时防止泄漏)
  */
 import { ref, computed, onUnmounted } from 'vue'
@@ -63,8 +63,9 @@ const stages = [
 ]
 
 const POLL_INTERVAL = 2000
-// 前端兜底超时: 5 分钟 (后端 LLM 含重试最坏约 560s, 但通常远快于此)
-const MAX_WAIT_MS = 5 * 60 * 1000
+// 前端兜底超时: 10 分钟。12 天行程拆 3 个分块串行调用 k3(思考型模型),
+// 实测单块可达数分钟, 总耗时可能超过原来的 5 分钟上限导致误报"生成超时"
+const MAX_WAIT_MS = 10 * 60 * 1000
 
 const taskId = ref('')
 const progress = ref(0)
